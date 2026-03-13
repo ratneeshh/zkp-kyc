@@ -159,11 +159,15 @@ app.post("/api/verify/age", async (req, res) => {
       proof
     );
 
+    // publicSignals[0] is isOldEnough — must be "1" to pass
+    const isOldEnough = publicSignals[0] === "1";
+    const verified = isValid && isOldEnough;
+
     const latencyMs = Date.now() - startTime;
-    logAudit("age_verification", isValid, latencyMs);
+    logAudit("age_verification", verified, latencyMs);
 
     return res.json({
-      verified: isValid,
+      verified: verified,
       latencyMs,
       piiReceived: false,
       message: isValid ? "User is 18 or older" : "Proof invalid",
@@ -189,11 +193,14 @@ app.post("/api/verify/kyc", async (req, res) => {
     console.log("🔒 Aadhaar hash:", aadhaarHash.slice(0, 8) + "...");
 
     // Verify ZK age proof
-    const ageValid = await snarkjs.groth16.verify(
+    const proofValid = await snarkjs.groth16.verify(
       verificationKey,
       publicSignals,
       proof
     );
+
+    // publicSignals[0] is isOldEnough — must be "1" to pass
+    const ageValid = proofValid && publicSignals[0] === "1";
 
     // Check Aadhaar hash is in our registry
     const aadhaarValid = VALID_AADHAAR_HASHES.has(aadhaarHash);
