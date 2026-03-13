@@ -27,6 +27,8 @@ const loadVerificationKey = () => {
   }
 };
 
+const { registerBankAdapter } = require("./adapters/bankAdapter");
+
 // --------------------------------------------------
 // Mock UIDAI Registry
 // These are SHA-256 hashes of valid test Aadhaar numbers
@@ -240,6 +242,7 @@ app.get("/api/audit", (req, res) => {
 
 const PORT = 4000;
 loadVerificationKey();
+registerBankAdapter(app, snarkjs, verificationKey);
 app.listen(PORT, () => {
   console.log(`🚀 ZKP-KYC Verifier running on http://localhost:${PORT}`);
   console.log(`🔒 PII stored: NONE`);
@@ -249,4 +252,6 @@ app.listen(PORT, () => {
   console.log(`   2200 0000 0004`);
   console.log(`   2200 0000 1102`);
   console.log(`   2200 0000 1490`);
+  console.log(`🏦 Bank adapter: http://localhost:${PORT}/api/bank/onboard`);
+  console.log(`📊 Benchmark: http://localhost:${PORT}/api/bank/benchmark`);
 });
