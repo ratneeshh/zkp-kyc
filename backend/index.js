@@ -243,6 +243,53 @@ app.get("/api/audit", (req, res) => {
 const PORT = 4000;
 loadVerificationKey();
 registerBankAdapter(app, snarkjs, verificationKey);
+// Load student verification key
+let studentVerificationKey = null;
+try {
+  const raw = fs.readFileSync(path.join(__dirname, "../circuits/student_verification_key.json"), "utf8");
+  studentVerificationKey = JSON.parse(raw);
+  console.log("✅ Student verification key loaded");
+} catch (err) {
+  console.error("⚠️  Student verification key not found:", err.message);
+}
+
+// Student ID verification endpoint
+app.post("/api/verify/student", async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { proof, publicSignals, institutionName } = req.body;
+    if (!proof || !publicSignals) return res.status(400).json({ error: "Missing proof" });
+
+    if (!studentVerificationKey) return res.status(500).json({ error: "Student verification key not loaded" });
+
+    const proofValid = await snarkjs.groth16.verify(studentVerificationKey, publicSignals, proof);
+
+    // publicSignals: [isAdult, isEnrolled, isTierValid, isValidStudent, currentYear, currentMonth, currentDay, minTier]
+    const isAdult      = publicSignals[0] === "1";
+    const isEnrolled   = publicSignals[1] === "1";
+    const isTierValid  = publicSignals[2] === "1";
+    const isValidStudent = publicSignals[3] === "1";
+    const verified = proofValid && isValidStudent;
+
+    const latencyMs = Date.now() - startTime;
+    console.log(`🎓 Student verify: adult=${isAdult} enrolled=${isEnrolled} tier=${isTierValid} → ${verified} (${latencyMs}ms)`);
+    logAudit("student_verification", verified, latencyMs);
+
+    return res.json({
+      verified,
+      isAdult,
+      isEnrolled,
+      isTierValid,
+      isValidStudent,
+      latencyMs,
+      piiTransmitted: "None",
+      method: "Groth16 ZKP",
+    });
+  } catch (err) {
+    console.error("Student verify error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
 app.listen(PORT, () => {
   console.log(`🚀 ZKP-KYC Verifier running on http://localhost:${PORT}`);
   console.log(`🔒 PII stored: NONE`);

@@ -3,6 +3,7 @@ import ConsentScreen from "./components/ConsentScreen";
 import AgeVerify from "./pages/AgeVerify";
 import AadhaarVerify from "./pages/AadhaarVerify";
 import BenchmarkReport from "./pages/BenchmarkReport";
+import StudentVerify from "./pages/StudentVerify";
 
 export default function App() {
   const [screen, setScreen] = useState("consent"); // consent | home | age | aadhaar
@@ -16,6 +17,15 @@ export default function App() {
       <div>
         <BackButton onClick={() => setScreen("home")} />
         <AgeVerify />
+      </div>
+    );
+  }
+
+  if (screen === "student") {
+    return (
+      <div>
+        <BackButton onClick={() => setScreen("home")} />
+        <StudentVerify />
       </div>
     );
   }
@@ -95,6 +105,15 @@ export default function App() {
             tagColor="#fdf6b2"
             tagText="#723b13"
             onClick={() => setScreen("benchmark")}
+          />
+          <VerifyCard
+            icon="🎓"
+            title="Student ID Verify"
+            desc="Prove enrollment & age via college ID card — OCR + ZKP, zero data transmitted"
+            tag="Student KYC"
+            tagColor="#f3faf7"
+            tagText="#057a55"
+            onClick={() => setScreen("student")}
           />
         </div>
 
@@ -210,7 +229,7 @@ const styles = {
   },
   statValue: { fontSize: "16px", fontWeight: "700", margin: "0 0 2px" },
   statLabel: { fontSize: "11px", color: "#6b7280", margin: 0, textTransform: "uppercase", letterSpacing: "0.5px" },
-  optionsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "32px" },
+  optionsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "32px" },
   verifyCard: {
     background: "#fff", border: "1px solid #e5e7eb",
     borderRadius: "6px", padding: "20px",
