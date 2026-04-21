@@ -74,8 +74,8 @@ export default function StudentVerify() {
 
       // DOB extraction
       const dobRaw = extractField(text, [
-        /D\.?O\.?B\.?\s*[:-]?\s*(\d{2}[-\/]\d{2}[-\/]\d{4})/i,
-        /Date of Birth\s*[:-]?\s*(\d{2}[-\/]\d{2}[-\/]\d{4})/i,
+        /D\.?O\.?B\.?\s*[:\-]?\s*(\d{2}[-\/]\d{2}[-\/]\d{4})/i,
+        /Date of Birth\s*[:\-]?\s*(\d{2}[-\/]\d{2}[-\/]\d{4})/i,
         /(\d{2}-\d{2}-\d{4})/,
         /(\d{2}\/\d{2}\/\d{4})/,
       ]);
@@ -90,9 +90,9 @@ export default function StudentVerify() {
 
       // Valid till extraction
       const validRaw = extractField(text, [
-        /Valid\s*[Tt]ill\s*[:-]?\s*([A-Za-z]+\s*[-–]?\s*\d{4})/i,
-        /Expiry\s*[:-]?\s*([A-Za-z]+\s*\d{4})/i,
-        /Valid\s*[Tt]o\s*[:-]?\s*([A-Za-z]+\s*\d{4})/i,
+        /Valid\s*[Tt]ill\s*[:\-]?\s*([A-Za-z]+\s*[-–]?\s*\d{4})/i,
+        /Expiry\s*[:\-]?\s*([A-Za-z]+\s*\d{4})/i,
+        /Valid\s*[Tt]o\s*[:\-]?\s*([A-Za-z]+\s*\d{4})/i,
       ]);
 
       let validTillYear = "2028", validTillMonth = "6";
@@ -109,15 +109,15 @@ export default function StudentVerify() {
 
       // Roll No
       const rollNo = extractField(text, [
-        /Roll\s*No\.?\s*[:-]?\s*(\w+)/i,
-        /Enrollment\s*No\.?\s*[:-]?\s*(\w+)/i,
-        /Reg\.?\s*No\.?\s*[:-]?\s*(\w+)/i,
+        /Roll\s*No\.?\s*[:\-]?\s*(\w+)/i,
+        /Enrollment\s*No\.?\s*[:\-]?\s*(\w+)/i,
+        /Reg\.?\s*No\.?\s*[:\-]?\s*(\w+)/i,
       ]) || "";
 
       // Name
       const name = extractField(text, [
-        /Name\s*[:-]?\s*([A-Z][A-Z\s]+)/,
-        /Student\s*[:-]?\s*([A-Z][A-Z\s]+)/,
+        /Name\s*[:\-]?\s*([A-Z][A-Z\s]+)/,
+        /Student\s*[:\-]?\s*([A-Z][A-Z\s]+)/,
       ]) || "";
 
       setFields({
