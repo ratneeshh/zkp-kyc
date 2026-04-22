@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useZKProof } from "../hooks/useZKProof";
-import { encodeProofToUrl, generateQRCode } from "../utils/proofShare";
+import { createProofQR } from "../utils/proofShare";
 
 export default function AgeVerify() {
   const [dob, setDob] = useState("");
@@ -22,16 +22,10 @@ export default function AgeVerify() {
         date.getDate()
       );
 
-      const proofUrl = encodeProofToUrl(proofResult.proof, proofResult.publicSignals, "age");
-      const qrDataUrl = await generateQRCode(proofUrl);
-      const proofCode = btoa(JSON.stringify({
-        proof: proofResult.proof,
-        publicSignals: proofResult.publicSignals,
-        type: "age",
-        issuedAt: Date.now(),
-      }));
-
-      setResult({ proofUrl, qrDataUrl, proofCode, timeTaken: proofResult.timeTaken });
+      const { url, qrDataUrl, proofCode } = await createProofQR(
+        proofResult.proof, proofResult.publicSignals, "age"
+      );
+      setResult({ proofUrl: url, qrDataUrl, proofCode, timeTaken: proofResult.timeTaken });
       setStep("done");
     } catch (err) {
       setError(err.message);

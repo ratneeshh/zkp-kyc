@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useZKProof } from "../hooks/useZKProof";
 import { validateAadhaar, formatAadhaar } from "../utils/aadhaarValidator";
-import { encodeProofToUrl, generateQRCode } from "../utils/proofShare";
+import { createProofQR } from "../utils/proofShare";
 
 const TEST_NUMBERS = [
   { n: "2200 0000 0004", label: "Adult (age 30) ✅" },
@@ -79,13 +79,10 @@ export default function AadhaarVerify() {
         date.getFullYear(), date.getMonth() + 1, date.getDate()
       );
       const hash = await hashAadhaar(aadhaarInput.replace(/\s/g, ""));
-      const proofUrl = encodeProofToUrl(proofResult.proof, proofResult.publicSignals, "kyc", { aadhaarHash: hash });
-      const qrDataUrl = await generateQRCode(proofUrl);
-      const proofCode = btoa(JSON.stringify({
-        proof: proofResult.proof, publicSignals: proofResult.publicSignals,
-        aadhaarHash: hash, type: "kyc", issuedAt: Date.now(),
-      }));
-      setResult({ proofUrl, qrDataUrl, proofCode, timeTaken: proofResult.timeTaken });
+      const { url, qrDataUrl, proofCode } = await createProofQR(
+        proofResult.proof, proofResult.publicSignals, "kyc", { aadhaarHash: hash }
+      );
+      setResult({ proofUrl: url, qrDataUrl, proofCode, timeTaken: proofResult.timeTaken });
       setStep("done");
     } catch (err) {
       setError(err.message);

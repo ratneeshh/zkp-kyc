@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { decodeProofFromUrl } from "../utils/proofShare";
+import { fetchProofById } from "../utils/proofShare";
 
 const TYPE_LABELS = {
   age: { title: "Age Verification (18+)", endpoint: "/api/verify/age", icon: "🎂" },
@@ -15,11 +15,17 @@ export default function VerifierPortal() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Auto-load proof from URL if present
-    const decoded = decodeProofFromUrl();
-    if (decoded) {
-      setProofData(decoded);
-      verifyProof(decoded);
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id");
+    if (id) {
+      fetchProofById(id).then(data => {
+        if (data) {
+          setProofData(data);
+          verifyProof(data);
+        } else {
+          setError("Proof not found or expired (proofs expire after 30 minutes)");
+        }
+      });
     }
   }, []);
 
@@ -46,13 +52,14 @@ export default function VerifierPortal() {
     }
   };
 
-  const handleManualVerify = () => {
-    try {
-      const decoded = JSON.parse(atob(manualInput.trim()));
-      setProofData(decoded);
-      verifyProof(decoded);
-    } catch {
-      setError("Invalid proof code. Please paste the exact code from the prover.");
+  const handleManualVerify = async () => {
+    const id = manualInput.trim();
+    const data = await fetchProofById(id);
+    if (data) {
+      setProofData(data);
+      verifyProof(data);
+    } else {
+      setError("Invalid proof ID. Proof may have expired.");
     }
   };
 

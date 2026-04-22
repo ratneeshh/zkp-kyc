@@ -54,6 +54,8 @@ const otpStore = new Map();
 
 // Audit log — zero PII
 const auditLog = [];
+// Proof storage — short ID maps to full proof
+const proofStore = new Map();
 const logAudit = (type, result, latencyMs) => {
   auditLog.push({
     type,
@@ -296,6 +298,24 @@ app.post("/api/verify/student", async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
+
+// Store proof and return short ID
+app.post("/api/proof/store", (req, res) => {
+  const { proof, publicSignals, type, aadhaarHash } = req.body;
+  const id = crypto.randomBytes(6).toString("hex"); // 12-char ID
+  proofStore.set(id, { proof, publicSignals, type, aadhaarHash, issuedAt: Date.now() });
+  console.log(`📦 Proof stored: ${id} (type: ${type})`);
+  setTimeout(() => proofStore.delete(id), 30 * 60 * 1000); // expire in 30min
+  return res.json({ success: true, id });
+});
+
+// Retrieve proof by ID
+app.get("/api/proof/:id", (req, res) => {
+  const data = proofStore.get(req.params.id);
+  if (!data) return res.status(404).json({ error: "Proof not found or expired" });
+  return res.json({ success: true, ...data });
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 ZKP-KYC Verifier running on http://localhost:${PORT}`);
   console.log(`🔒 PII stored: NONE`);

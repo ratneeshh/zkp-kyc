@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import Tesseract from "tesseract.js";
-import { encodeProofToUrl, generateQRCode } from "../utils/proofShare";
+import { createProofQR } from "../utils/proofShare";
 
 const INSTITUTION_TIERS = {
   "IIT": 1, "NIT": 2, "IIIT": 2, "BITS": 2,
@@ -183,15 +183,9 @@ export default function StudentVerify() {
       const timeTaken = ((Date.now() - start) / 1000).toFixed(2);
 
       // Generate QR + proof code — no server verification here
-      const url = encodeProofToUrl(zkProof, publicSignals, "student");
-      const qr = await generateQRCode(url);
-      const code = btoa(JSON.stringify({
-        proof: zkProof,
-        publicSignals,
-        type: "student",
-        issuedAt: Date.now(),
-      }));
-
+      const { url, qrDataUrl: qr, proofCode: code } = await createProofQR(
+        zkProof, publicSignals, "student"
+      );
       setProofUrl(url);
       setQrDataUrl(qr);
       setProofCode(code);
