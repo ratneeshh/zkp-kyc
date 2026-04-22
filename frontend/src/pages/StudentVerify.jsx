@@ -145,8 +145,15 @@ export default function StudentVerify() {
     setStep("proving");
     try {
       const now = new Date();
+      // Validate required fields before proving
+      if (!fields.birthYear || !fields.birthMonth || !fields.birthDay) {
+        setError("OCR could not extract date of birth. Please upload a clear ID card image.");
+        setStep("confirm");
+        return;
+      }
+
       const inputs = {
-        birthYear: parseInt(fields.birthYear) || 2005,
+        birthYear: parseInt(fields.birthYear),
         birthMonth: parseInt(fields.birthMonth) || 7,
         birthDay: parseInt(fields.birthDay) || 6,
         validTillYear: parseInt(fields.validTillYear) || 2028,

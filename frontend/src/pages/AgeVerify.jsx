@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useZKProof } from "../hooks/useZKProof";
+import { encodeProofToUrl, generateQRCode } from "../utils/proofShare";
 
 export default function AgeVerify() {
   const [dob, setDob] = useState("");
@@ -9,28 +10,31 @@ export default function AgeVerify() {
 
   const handleVerify = async () => {
     if (!dob) return;
-    const date = new Date(dob);
+    setError(null);
     try {
-      const result = await generateAgeProof(
+      setStep("proving");
+      const date = new Date(dob);
+      const proofResult = await generateAgeProof(
         date.getFullYear(),
         date.getMonth() + 1,
         date.getDate()
       );
-      setVerifying(true);
-      const response = await fetch("http://localhost:4000/api/verify/age", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          proof: result.proof,
-          publicSignals: result.publicSignals,
-        }),
-      });
-      const data = await response.json();
-      setVerificationResult({ ...data, timeTaken: result.timeTaken });
+
+      // Generate shareable proof package
+      const proofUrl = encodeProofToUrl(proofResult.proof, proofResult.publicSignals, "age");
+      const qrDataUrl = await generateQRCode(proofUrl);
+      const proofCode = btoa(JSON.stringify({
+        proof: proofResult.proof,
+        publicSignals: proofResult.publicSignals,
+        type: "age",
+        issuedAt: Date.now(),
+      }));
+
+      setResult({ proofUrl, qrDataUrl, proofCode, timeTaken: proofResult.timeTaken });
+      setStep("done");
     } catch (err) {
-      console.error(err);
-    } finally {
-      setVerifying(false);
+      setError(err.message);
+      setStep("idle");
     }
   };
 

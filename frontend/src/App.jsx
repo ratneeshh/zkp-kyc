@@ -4,6 +4,7 @@ import AgeVerify from "./pages/AgeVerify";
 import AadhaarVerify from "./pages/AadhaarVerify";
 import BenchmarkReport from "./pages/BenchmarkReport";
 import StudentVerify from "./pages/StudentVerify";
+import VerifierPortal from "./pages/VerifierPortal";
 
 export default function App() {
   const [screen, setScreen] = useState("consent"); // consent | home | age | aadhaar
@@ -44,6 +45,15 @@ export default function App() {
       <div>
         <BackButton onClick={() => setScreen("home")} />
         <AadhaarVerify />
+      </div>
+    );
+  }
+
+  if (screen === "verifier") {
+    return (
+      <div>
+        <BackButton onClick={() => setScreen("home")} />
+        <VerifierPortal />
       </div>
     );
   }
@@ -114,6 +124,15 @@ export default function App() {
             tagColor="#f3faf7"
             tagText="#057a55"
             onClick={() => setScreen("student")}
+          />
+          <VerifyCard
+            icon="🔍"
+            title="Verifier Portal"
+            desc="Verify a ZK proof from a prover — learn only PASS or FAIL"
+            tag="Verifier"
+            tagColor="#fdf6b2"
+            tagText="#723b13"
+            onClick={() => setScreen("verifier")}
           />
         </div>
 
@@ -229,7 +248,7 @@ const styles = {
   },
   statValue: { fontSize: "16px", fontWeight: "700", margin: "0 0 2px" },
   statLabel: { fontSize: "11px", color: "#6b7280", margin: 0, textTransform: "uppercase", letterSpacing: "0.5px" },
-  optionsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "32px" },
+  optionsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginBottom: "32px" },
   verifyCard: {
     background: "#fff", border: "1px solid #e5e7eb",
     borderRadius: "6px", padding: "20px",
