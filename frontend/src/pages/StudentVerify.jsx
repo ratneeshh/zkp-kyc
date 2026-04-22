@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import Tesseract from "tesseract.js";
+import { encodeProofToUrl, generateQRCode } from "../utils/proofShare";
 
 const INSTITUTION_TIERS = {
   "IIT": 1, "NIT": 2, "IIIT": 2, "BITS": 2,
@@ -37,6 +38,10 @@ export default function StudentVerify() {
   const [proof, setProof] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [qrDataUrl, setQrDataUrl] = useState(null);
+  const [proofCode, setProofCode] = useState(null);
+  const [proofUrl, setProofUrl] = useState(null);
+  const [copied, setCopied] = useState(false);
   const fileRef = useRef();
 
   const handleImageUpload = async (e) => {
@@ -176,21 +181,21 @@ export default function StudentVerify() {
       );
 
       const timeTaken = ((Date.now() - start) / 1000).toFixed(2);
-      setProof({ proof: zkProof, publicSignals, timeTaken });
 
-      // Send to backend
-      const response = await fetch("http://localhost:4000/api/verify/student", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          proof: zkProof,
-          publicSignals,
-          institutionName: fields.institutionName,
-        }),
-      });
+      // Generate QR + proof code — no server verification here
+      const url = encodeProofToUrl(zkProof, publicSignals, "student");
+      const qr = await generateQRCode(url);
+      const code = btoa(JSON.stringify({
+        proof: zkProof,
+        publicSignals,
+        type: "student",
+        issuedAt: Date.now(),
+      }));
 
-      const data = await response.json();
-      setResult({ ...data, timeTaken });
+      setProofUrl(url);
+      setQrDataUrl(qr);
+      setProofCode(code);
+      setResult({ timeTaken });
       setStep("done");
     } catch (err) {
       setError(err.message);
@@ -200,7 +205,8 @@ export default function StudentVerify() {
 
   const reset = () => {
     setStep("upload"); setFields({}); setProof(null);
-    setResult(null); setError(null); setImagePreview(null); setOcrProgress(0);
+    setResult(null); setError(null); setImagePreview(null);
+    setOcrProgress(0); setQrDataUrl(null); setProofCode(null); setProofUrl(null);
   };
 
   return (
@@ -354,25 +360,43 @@ export default function StudentVerify() {
         {/* DONE */}
         {step === "done" && result && (
           <div>
-            <div style={{
-              ...styles.resultBox,
-              borderColor: result.verified ? "#057a55" : "#c81e1e",
-              background: result.verified ? "#f3faf7" : "#fdf2f2",
-            }}>
-              <p style={{ fontSize: "16px", fontWeight: "700", margin: "0 0 16px", color: result.verified ? "#057a55" : "#c81e1e" }}>
-                {result.verified ? "✅ Student Identity Verified" : "❌ Verification Failed"}
+            <div style={{ background: "#f3faf7", border: "1px solid #bcf0da", borderRadius: "6px", padding: "14px", marginBottom: "16px" }}>
+              <p style={{ fontSize: "14px", fontWeight: "700", color: "#057a55", margin: "0 0 4px" }}>
+                ✅ Student ZK Proof Generated — {result.timeTaken}s
               </p>
-              <ResultRow label="Age 18+" value={result.isAdult ? "Proved ✓" : "Failed ✗"} ok={result.isAdult} />
-              <ResultRow label="Active enrollment" value={result.isEnrolled ? "Proved ✓" : "Failed ✗"} ok={result.isEnrolled} />
-              <ResultRow label="Institution tier" value={result.isTierValid ? "Accepted ✓" : "Below minimum ✗"} ok={result.isTierValid} />
-              <ResultRow label="Card data transmitted" value="None ✓" ok={true} />
-              <ResultRow label="Proof generation" value={`${result.timeTaken}s`} ok={true} />
-              <ResultRow label="Server latency" value={`${result.latencyMs}ms`} ok={true} />
-              <ResultRow label="Proof system" value="Groth16 (BN128)" ok={true} />
+              <p style={{ fontSize: "12px", color: "#374151", margin: 0 }}>
+                Enrollment and age proved locally. Card data never transmitted.
+              </p>
             </div>
-            <button onClick={reset} style={styles.resetBtn}>
-              Verify Another Card
-            </button>
+
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "20px", textAlign: "center", marginBottom: "16px" }}>
+              <p style={{ fontSize: "13px", fontWeight: "700", color: "#111827", margin: "0 0 14px" }}>
+                📱 Show this QR to your institution / verifier
+              </p>
+              <img src={qrDataUrl} alt="Proof QR" style={{ width: "200px", height: "200px", display: "block", margin: "0 auto" }} />
+              <p style={{ fontSize: "12px", color: "#6b7280", margin: "12px 0 0" }}>
+                Verifier learns: enrolled ✓, age 18+ ✓, tier ✓ — nothing else
+              </p>
+            </div>
+
+            <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "6px", padding: "14px", marginBottom: "16px" }}>
+              <p style={{ fontSize: "12px", fontWeight: "700", color: "#374151", margin: "0 0 8px" }}>Or share the proof code:</p>
+              <textarea
+                readOnly value={proofCode} rows={3}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "11px", fontFamily: "monospace", color: "#374151", background: "#fff", boxSizing: "border-box", resize: "none" }}
+              />
+              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(proofCode); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                  style={{ padding: "7px 16px", background: "#1a56db", color: "#fff", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}
+                >{copied ? "✓ Copied!" : "Copy Code"}</button>
+                <a href={proofUrl} target="_blank" rel="noreferrer"
+                  style={{ padding: "7px 16px", background: "#057a55", color: "#fff", borderRadius: "4px", fontSize: "12px", fontWeight: "600", textDecoration: "none", display: "inline-block" }}
+                >Open Verifier Portal →</a>
+              </div>
+            </div>
+
+            <button onClick={reset} style={styles.resetBtn}>Verify Another Card</button>
           </div>
         )}
       </div>

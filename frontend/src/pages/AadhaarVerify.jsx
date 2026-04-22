@@ -1,381 +1,271 @@
 import { useState } from "react";
 import { useZKProof } from "../hooks/useZKProof";
-import { validateAadhaar, formatAadhaar, TEST_AADHAAR_NUMBERS } from "../utils/aadhaarValidator";
+import { validateAadhaar, formatAadhaar } from "../utils/aadhaarValidator";
+import { encodeProofToUrl, generateQRCode } from "../utils/proofShare";
+
+const TEST_NUMBERS = [
+  { n: "2200 0000 0004", label: "Adult (age 30) ✅" },
+  { n: "2200 0000 1102", label: "Minor (age 15) ❌" },
+  { n: "2200 0000 1490", label: "Adult (age 26) ✅" },
+];
 
 export default function AadhaarVerify() {
   const [aadhaarInput, setAadhaarInput] = useState("");
   const [dob, setDob] = useState("");
   const [otp, setOtp] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [step, setStep] = useState("idle"); // idle | sending_otp | otp_sent | proving | verifying | done
+  const [step, setStep] = useState("idle"); // idle | sending_otp | otp_sent | otp_verified | proving | done
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [serverOtp, setServerOtp] = useState(null);
-  const { generateAgeProof, loading } = useZKProof();
+  const { generateAgeProof } = useZKProof();
 
-  const aadhaarValidation = validateAadhaar(aadhaarInput);
-  const isAadhaarValid = aadhaarValidation.valid;
+  const validation = validateAadhaar(aadhaarInput);
+  const isValid = validation.valid;
 
-  // Step 1: Send OTP to mock UIDAI
+  const hashAadhaar = async (num) => {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(num));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  };
+
   const handleSendOtp = async () => {
     setError(null);
     setStep("sending_otp");
     try {
-      const response = await fetch("http://localhost:4000/api/uidai/send-otp", {
+      const hash = await hashAadhaar(aadhaarInput.replace(/\s/g, ""));
+      const res = await fetch("http://localhost:4000/api/uidai/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          aadhaarHash: await hashAadhaar(aadhaarInput.replace(/\s/g, "")),
-        }),
+        body: JSON.stringify({ aadhaarHash: hash }),
       });
-      const data = await response.json();
+      const data = await res.json();
       if (data.success) {
-        setOtpSent(true);
-        setServerOtp(data.otp);
-        setStep("otp_sent");} else {
+        setStep("otp_sent");
+      } else {
         setError(data.error || "Aadhaar not found in registry");
         setStep("idle");
       }
-    } catch (err) {
+    } catch {
       setError("Could not reach UIDAI service");
       setStep("idle");
     }
   };
 
-  // Step 2: Verify OTP
   const handleVerifyOtp = async () => {
     setError(null);
     try {
-      const response = await fetch("http://localhost:4000/api/uidai/verify-otp", {
+      const hash = await hashAadhaar(aadhaarInput.replace(/\s/g, ""));
+      const res = await fetch("http://localhost:4000/api/uidai/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          aadhaarHash: await hashAadhaar(aadhaarInput.replace(/\s/g, "")),
-          otp,
-        }),
+        body: JSON.stringify({ aadhaarHash: hash, otp }),
       });
-      const data = await response.json();
+      const data = await res.json();
       if (data.success) {
-        setOtpVerified(true);
+        setDob(data.dob || ""); // auto-fill DOB from registry
+        setStep("otp_verified");
       } else {
-        setError("Invalid OTP. Check the green box above for the correct OTP.");
+        setError("Invalid OTP");
       }
-    } catch (err) {
+    } catch {
       setError("OTP verification failed");
     }
   };
 
-  // Step 3: Generate ZK proof + full KYC
-  const handleVerify = async () => {
-    if (!dob || !otpVerified) return;
+  const handleGenerateProof = async () => {
     setError(null);
+    setStep("proving");
     try {
-      setStep("proving");
       const date = new Date(dob);
       const proofResult = await generateAgeProof(
-        date.getFullYear(),
-        date.getMonth() + 1,
-        date.getDate()
+        date.getFullYear(), date.getMonth() + 1, date.getDate()
       );
-
-      setStep("verifying");
-      const aadhaarHash = await hashAadhaar(aadhaarInput.replace(/\s/g, ""));
-      const response = await fetch("http://localhost:4000/api/verify/kyc", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          proof: proofResult.proof,
-          publicSignals: proofResult.publicSignals,
-          aadhaarHash,
-        }),
-      });
-      const data = await response.json();
-      setResult({ ...data, timeTaken: proofResult.timeTaken });
+      const hash = await hashAadhaar(aadhaarInput.replace(/\s/g, ""));
+      const proofUrl = encodeProofToUrl(proofResult.proof, proofResult.publicSignals, "kyc", { aadhaarHash: hash });
+      const qrDataUrl = await generateQRCode(proofUrl);
+      const proofCode = btoa(JSON.stringify({
+        proof: proofResult.proof, publicSignals: proofResult.publicSignals,
+        aadhaarHash: hash, type: "kyc", issuedAt: Date.now(),
+      }));
+      setResult({ proofUrl, qrDataUrl, proofCode, timeTaken: proofResult.timeTaken });
       setStep("done");
     } catch (err) {
       setError(err.message);
-      setStep("otp_sent");
+      setStep("otp_verified");
     }
-  };
-
-  const hashAadhaar = async (aadhaar) => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(aadhaar);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    return Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
   };
 
   const reset = () => {
     setStep("idle"); setResult(null); setAadhaarInput("");
-    setDob(""); setOtp(""); setOtpSent(false);
-    setOtpVerified(false); setError(null);
+    setDob(""); setOtp(""); setError(null);
   };
 
   return (
-    <div style={styles.container}>
+    <div style={styles.page}>
       <div style={styles.card}>
-        {/* Header */}
         <div style={styles.header}>
-          <div style={styles.badge}>AADHAAR KYC — ZERO KNOWLEDGE</div>
+          <span style={styles.badge}>AADHAAR KYC — ZERO KNOWLEDGE</span>
           <h1 style={styles.title}>Identity Verification</h1>
-          <p style={styles.subtitle}>
-            Verify Aadhaar and age — no PII leaves your device
+          <p style={styles.subtitle}>Verify Aadhaar and age — no PII leaves your device</p>
+        </div>
+
+        {/* Test numbers */}
+        <div style={styles.testBox}>
+          <p style={styles.testTitle}>Demo — test Aadhaar numbers:</p>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            {TEST_NUMBERS.map(({ n, label }) => (
+              <div key={n} style={{ textAlign: "center" }}>
+                <button onClick={() => { setAadhaarInput(n); setDob(""); setOtp(""); setStep("idle"); setError(null); }}
+                  style={{ ...styles.chip, borderColor: label.includes("✅") ? "#86efac" : "#fca5a5", background: label.includes("✅") ? "#f0fdf4" : "#fef2f2" }}>
+                  {n}
+                </button>
+                <p style={{ fontSize: "10px", margin: "2px 0 0", color: label.includes("✅") ? "#057a55" : "#c81e1e", fontWeight: "600" }}>{label}</p>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: "11px", color: "#92400e", margin: "8px 0 0" }}>
+            Click number → Send OTP → check terminal for OTP → DOB auto-fills after OTP
           </p>
         </div>
 
-        {/* Test numbers hint */}
-        <div style={styles.testBox}>
-          <p style={styles.testTitle}>Demo — use these test Aadhaar numbers:</p>
-          {TEST_AADHAAR_NUMBERS.map((n) => (
-            <button
-              key={n}
-              onClick={() => { setAadhaarInput(n); setError(null); }}
-              style={styles.testChip}
-            >
-              {n}
-            </button>
-          ))}
-          <p style={{fontSize:"12px", color:"#92400e", marginTop:"8px", marginBottom:0}}>
-            After clicking a number, request OTP — the OTP will appear on screen automatically.
-        </p>
-          
-        </div>
-
-        {/* Privacy guarantees */}
-        <div style={styles.guaranteeBox}>
-          <GuaranteeItem icon="🔐" text="Aadhaar number hashed in browser" />
-          <GuaranteeItem icon="🧮" text="Age proved via Groth16 ZK proof" />
-          <GuaranteeItem icon="✅" text="Verhoeff checksum validated" />
-          <GuaranteeItem icon="🚫" text="Raw Aadhaar never transmitted" />
-        </div>
-
-        {/* Aadhaar input */}
-        <div style={styles.inputGroup}>
-          <label style={styles.label}>Aadhaar Number</label>
-          <input
-            type="text"
-            value={aadhaarInput}
-            onChange={(e) => {
-              setAadhaarInput(formatAadhaar(e.target.value));
-              setOtpSent(false); setOtpVerified(false); setError(null);
-            }}
-            placeholder="XXXX XXXX XXXX"
-            style={{
-              ...styles.input,
-              borderColor: aadhaarInput
-                ? isAadhaarValid ? "#22c55e" : "#ef4444"
-                : "#d1d5db",
-            }}
-            disabled={step === "proving" || step === "verifying" || step === "done"}
-          />
-          {aadhaarInput && (
-            <p style={{ fontSize: "12px", margin: "4px 0 0", color: isAadhaarValid ? "#15803d" : "#dc2626" }}>
-              {isAadhaarValid ? "✓ Valid Aadhaar (Verhoeff checksum passed)" : `✗ ${aadhaarValidation.error}`}
-            </p>
-          )}
-        </div>
-
-        {/* OTP section */}
-        {isAadhaarValid && !otpVerified && (
-          <div style={styles.otpSection}>
-            {!otpSent ? (
-              <button
-                onClick={handleSendOtp}
-                disabled={step === "sending_otp"}
-                style={styles.otpButton}
-              >
-                {step === "sending_otp" ? "⏳ Sending OTP..." : "📱 Send OTP to registered mobile"}
-              </button>
-            ) : (
-              <div>
-                <div style={styles.otpSentNote}>
-                  ✅ OTP sent to mobile linked with your Aadhaar
-                </div>
-                {serverOtp && (
-                  <div style={{ background: "#dcfce7", border: "1px solid #86efac", borderRadius: "8px", padding: "12px", marginBottom: "12px", textAlign: "center" }}>
-                    <p style={{ fontSize: "11px", color: "#15803d", margin: "0 0 4px", fontWeight: "600" }}>DEMO MODE — Your OTP is:</p>
-                    <p style={{ fontSize: "32px", fontWeight: "700", color: "#15803d", fontFamily: "monospace", margin: 0, letterSpacing: "10px" }}>{serverOtp}</p>
-                  </div>
-                )}
-                <label style={styles.label}>Enter OTP</label>
-                <div style={styles.otpRow}>
-                  <input
-                    type="text"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.slice(0, 6))}
-                    placeholder="6-digit OTP"
-                    maxLength={6}
-                    style={{ ...styles.input, fontFamily: "monospace", letterSpacing: "4px" }}
-                  />
-                  <button
-                    onClick={handleVerifyOtp}
-                    disabled={otp.length !== 6}
-                    style={{
-                      ...styles.verifyOtpBtn,
-                      opacity: otp.length !== 6 ? 0.5 : 1,
-                    }}
-                  >
-                    Verify
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* OTP verified — show DOB input */}
-        {otpVerified && step !== "done" && (
-          <div style={styles.otpVerifiedBox}>
-            <p style={styles.otpVerifiedText}>
-              ✅ Aadhaar OTP verified — identity confirmed
-            </p>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Date of Birth</label>
+        {/* STEP 1: Aadhaar input */}
+        {step === "idle" && (
+          <div>
+            <div style={styles.group}>
+              <label style={styles.label}>Aadhaar Number</label>
               <input
-                type="date"
-                value={dob}
-                onChange={(e) => setDob(e.target.value)}
-                style={styles.input}
-                max={new Date().toISOString().split("T")[0]}
-                disabled={step === "proving" || step === "verifying"}
+                value={aadhaarInput}
+                onChange={e => setAadhaarInput(formatAadhaar(e.target.value))}
+                placeholder="XXXX XXXX XXXX"
+                style={{ ...styles.input, borderColor: aadhaarInput ? (isValid ? "#057a55" : "#c81e1e") : "#d1d5db" }}
               />
+              {aadhaarInput && (
+                <p style={{ fontSize: "12px", margin: "4px 0 0", color: isValid ? "#057a55" : "#c81e1e" }}>
+                  {isValid ? "✓ Valid Aadhaar (Verhoeff checksum passed)" : `✗ ${validation.error}`}
+                </p>
+              )}
             </div>
-            <button
-              onClick={handleVerify}
-              disabled={!dob || step === "proving" || step === "verifying"}
-              style={{
-                ...styles.button,
-                opacity: !dob || loading ? 0.5 : 1,
-                cursor: !dob || loading ? "not-allowed" : "pointer",
-              }}
-            >
-              {step === "proving"
-                ? "⏳ Generating ZK Proof in browser..."
-                : step === "verifying"
-                ? "🔄 Verifying on server..."
-                : "Generate Proof & Complete KYC →"}
+            <button onClick={handleSendOtp} disabled={!isValid}
+              style={{ ...styles.btn, opacity: isValid ? 1 : 0.4 }}>
+              📱 Send OTP to registered mobile
             </button>
           </div>
         )}
 
-        {/* Progress */}
-        {(step === "proving" || step === "verifying" || step === "done") && (
-          <div style={styles.progressBox}>
-            <ProgressStep label="Aadhaar OTP verified" done={true} active={false} />
-            <ProgressStep label="Generating ZK proof in browser" done={step === "verifying" || step === "done"} active={step === "proving"} />
-            <ProgressStep label="Verifying proof on server" done={step === "done"} active={step === "verifying"} />
-            <ProgressStep label="KYC complete" done={step === "done"} active={false} />
+        {step === "sending_otp" && (
+          <div style={styles.statusBox}>⏳ Sending OTP to registered mobile...</div>
+        )}
+
+        {/* STEP 2: OTP input */}
+        {step === "otp_sent" && (
+          <div>
+            <div style={styles.sentNote}>✅ OTP sent — check your terminal for the OTP code</div>
+            <div style={styles.group}>
+              <label style={styles.label}>Enter OTP</label>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  value={otp}
+                  onChange={e => setOtp(e.target.value.slice(0, 6))}
+                  placeholder="6-digit OTP"
+                  maxLength={6}
+                  style={{ ...styles.input, fontFamily: "monospace", letterSpacing: "6px", flex: 1 }}
+                />
+                <button onClick={handleVerifyOtp} disabled={otp.length !== 6}
+                  style={{ ...styles.btn, width: "auto", padding: "10px 20px", opacity: otp.length === 6 ? 1 : 0.4 }}>
+                  Verify
+                </button>
+              </div>
+            </div>
           </div>
+        )}
+
+        {/* STEP 3: DOB auto-filled, generate proof */}
+        {step === "otp_verified" && (
+          <div>
+            <div style={styles.sentNote}>✅ OTP verified — identity confirmed</div>
+            <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "6px", padding: "14px", marginBottom: "16px" }}>
+              <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 4px" }}>Date of Birth (from Aadhaar registry)</p>
+              <p style={{ fontSize: "18px", fontWeight: "700", color: "#111827", margin: 0, fontFamily: "monospace" }}>{dob}</p>
+              <p style={{ fontSize: "11px", color: "#9ca3af", margin: "4px 0 0" }}>Auto-filled — not entered by user</p>
+            </div>
+            <button onClick={handleGenerateProof} style={styles.btn}>
+              Generate ZK Proof →
+            </button>
+          </div>
+        )}
+
+        {step === "proving" && (
+          <div style={styles.statusBox}>⏳ Generating Groth16 ZK Proof in browser...</div>
         )}
 
         {/* Error */}
         {error && (
-          <div style={styles.errorBox}>
-            <p style={styles.errorText}>❌ {error}</p>
-          </div>
+          <div style={styles.errorBox}>❌ {error}</div>
         )}
 
-        {/* Result */}
+        {/* DONE: QR + proof code */}
         {step === "done" && result && (
-          <div style={{
-            ...styles.resultBox,
-            borderColor: result.verified ? "#22c55e" : "#ef4444",
-            background: result.verified ? "#f0fdf4" : "#fef2f2",
-          }}>
-            <p style={styles.resultTitle}>
-              {result.verified ? "✅ KYC Verified Successfully" : "❌ KYC Failed"}
-            </p>
-            <ResultRow label="Age 18+" value={result.ageVerified ? "Proved ✓" : "Failed ✗"} />
-            <ResultRow label="Aadhaar validity" value={result.aadhaarVerified ? "Verified ✓" : "Failed ✗"} />
-            <ResultRow label="Verhoeff checksum" value="Passed ✓" />
-            <ResultRow label="OTP authentication" value="Passed ✓" />
-            <ResultRow label="PII transmitted" value="None ✓" />
-            <ResultRow label="Proof time" value={`${result.timeTaken}s`} />
-            <ResultRow label="Server latency" value={`${result.latencyMs}ms`} />
-            <ResultRow label="Method" value="Groth16 ZKP" />
+          <div>
+            <div style={styles.successBox}>
+              <p style={{ fontSize: "14px", fontWeight: "700", color: "#057a55", margin: "0 0 4px" }}>
+                ✅ KYC Proof Generated — {result.timeTaken}s
+              </p>
+              <p style={{ fontSize: "12px", color: "#374151", margin: 0 }}>
+                Zero PII transmitted. Share proof with verifier.
+              </p>
+            </div>
+
+            <div style={styles.qrBox}>
+              <p style={styles.qrTitle}>📱 Verifier scans this QR code</p>
+              <img src={result.qrDataUrl} alt="QR" style={{ width: "200px", height: "200px", display: "block", margin: "0 auto" }} />
+              <p style={{ fontSize: "12px", color: "#6b7280", margin: "10px 0 0", textAlign: "center" }}>
+                Verifier learns only: <strong>PASS</strong> or <strong>FAIL</strong>
+              </p>
+            </div>
+
+            <div style={styles.codeBox}>
+              <p style={{ fontSize: "12px", fontWeight: "700", color: "#374151", margin: "0 0 8px" }}>Or share proof code:</p>
+              <textarea readOnly value={result.proofCode} rows={3}
+                style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "11px", fontFamily: "monospace", background: "#fff", boxSizing: "border-box", resize: "none" }}
+              />
+              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                <button onClick={() => navigator.clipboard.writeText(result.proofCode)}
+                  style={{ padding: "7px 14px", background: "#1a56db", color: "#fff", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>
+                  Copy Code
+                </button>
+                <a href={result.proofUrl} target="_blank" rel="noreferrer"
+                  style={{ padding: "7px 14px", background: "#057a55", color: "#fff", borderRadius: "4px", fontSize: "12px", fontWeight: "600", textDecoration: "none" }}>
+                  Open Verifier →
+                </a>
+              </div>
+            </div>
+
+            <button onClick={reset} style={styles.resetBtn}>Start New Verification</button>
           </div>
         )}
-
-        {step === "done" && (
-          <button onClick={reset} style={styles.resetButton}>
-            Start New Verification
-          </button>
-        )}
       </div>
-    </div>
-  );
-}
-
-function GuaranteeItem({ icon, text }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-      <span style={{ fontSize: "14px" }}>{icon}</span>
-      <span style={{ fontSize: "12px", color: "#6d28d9" }}>{text}</span>
-    </div>
-  );
-}
-
-function ProgressStep({ label, active, done }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "5px 0" }}>
-      <div style={{
-        width: "20px", height: "20px", borderRadius: "50%", flexShrink: 0,
-        background: done ? "#22c55e" : active ? "#6d28d9" : "#e2e8f0",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: "10px", color: "#fff", fontWeight: "700",
-      }}>
-        {done ? "✓" : active ? "…" : "○"}
-      </div>
-      <span style={{
-        fontSize: "13px",
-        color: done ? "#15803d" : active ? "#6d28d9" : "#94a3b8",
-        fontWeight: active || done ? "600" : "400",
-      }}>
-        {label}
-      </span>
-    </div>
-  );
-}
-
-function ResultRow({ label, value }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-      <span style={{ fontSize: "12px", color: "#64748b" }}>{label}</span>
-      <span style={{ fontSize: "12px", fontWeight: "600", color: "#15803d" }}>{value}</span>
     </div>
   );
 }
 
 const styles = {
-  container: { minHeight: "100vh", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui, sans-serif", padding: "20px" },
-  card: { background: "#ffffff", borderRadius: "16px", padding: "40px", maxWidth: "520px", width: "100%", boxShadow: "0 4px 24px rgb(248, 248, 248)", border: "1px solid #e2e8f0" },
-  header: { marginBottom: "20px" },
-  badge: { display: "inline-block", background: "#ede9fe", color: "#6d28d9", fontSize: "11px", fontWeight: "600", letterSpacing: "1px", padding: "4px 10px", borderRadius: "6px", marginBottom: "12px" },
-  title: { fontSize: "24px", fontWeight: "700", color: "#0f172a", margin: "0 0 8px" },
-  subtitle: { fontSize: "14px", color: "#64748b", margin: 0 },
-  testBox: { background: "#fefce8", border: "1px solid #fde68a", borderRadius: "10px", padding: "14px", marginBottom: "16px" },
-  testTitle: { fontSize: "12px", fontWeight: "600", color: "#92400e", margin: "0 0 8px" },
-  testChip: { display: "inline-block", margin: "3px", padding: "4px 10px", background: "#fff", border: "1px solid #fcd34d", borderRadius: "6px", fontSize: "12px", fontFamily: "monospace", cursor: "pointer", color: "#78350f" },
-  testNote: { fontSize: "12px", color: "#92400e", margin: "8px 0 0" },
-  guaranteeBox: { display: "flex", flexDirection: "column", gap: "6px", background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: "10px", padding: "12px", marginBottom: "20px" },
-  inputGroup: { marginBottom: "16px" },
+  page: { minHeight: "100vh", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui, sans-serif", padding: "60px 20px 20px" },
+  card: { background: "#fff", borderRadius: "8px", padding: "36px", maxWidth: "500px", width: "100%", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", border: "1px solid #e5e7eb" },
+  header: { marginBottom: "20px", paddingBottom: "18px", borderBottom: "2px solid #1a56db" },
+  badge: { display: "inline-block", background: "#1a56db", color: "#fff", fontSize: "10px", fontWeight: "700", letterSpacing: "1px", padding: "3px 8px", borderRadius: "4px", marginBottom: "10px" },
+  title: { fontSize: "22px", fontWeight: "700", color: "#111827", margin: "0 0 6px" },
+  subtitle: { fontSize: "13px", color: "#6b7280", margin: 0 },
+  testBox: { background: "#fefce8", border: "1px solid #fde68a", borderRadius: "6px", padding: "14px", marginBottom: "20px" },
+  testTitle: { fontSize: "12px", fontWeight: "600", color: "#92400e", margin: "0 0 10px" },
+  chip: { padding: "5px 12px", border: "1px solid", borderRadius: "4px", fontSize: "12px", fontFamily: "monospace", cursor: "pointer", fontWeight: "600" },
+  group: { marginBottom: "14px" },
   label: { display: "block", fontSize: "13px", fontWeight: "600", color: "#374151", marginBottom: "6px" },
-  input: { width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "15px", color: "#111827", background: "#ffffff", boxSizing: "border-box", fontFamily: "monospace" },
-  otpSection: { marginBottom: "16px" },
-  otpButton: { width: "100%", padding: "11px", background: "#0369a1", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: "pointer", marginBottom: "8px" },
-  otpSentNote: { fontSize: "12px", color: "#15803d", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "6px", padding: "8px 12px", marginBottom: "10px" },
-  otpRow: { display: "flex", gap: "8px" },
-  verifyOtpBtn: { padding: "10px 16px", background: "#6d28d9", color: "#fff", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap" },
-  otpVerifiedBox: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "16px", marginBottom: "16px" },
-  otpVerifiedText: { fontSize: "13px", color: "#15803d", fontWeight: "600", margin: "0 0 14px" },
-  button: { width: "100%", padding: "13px", background: "#6d28d9", color: "#fff", border: "none", borderRadius: "10px", fontSize: "14px", fontWeight: "600", cursor: "pointer" },
-  progressBox: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "14px", marginBottom: "16px" },
-  errorBox: { background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "10px", padding: "12px", marginBottom: "16px" },
-  errorText: { color: "#dc2626", fontSize: "13px", margin: 0 },
-  resultBox: { border: "2px solid", borderRadius: "10px", padding: "16px", marginBottom: "16px" },
-  resultTitle: { fontSize: "15px", fontWeight: "700", margin: "0 0 12px" },
-  resetButton: { width: "100%", padding: "12px", background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", fontWeight: "600", cursor: "pointer" },
+  input: { width: "100%", padding: "10px 12px", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "15px", color: "#111827", background: "#fff", boxSizing: "border-box" },
+  btn: { width: "100%", padding: "12px", background: "#1a56db", color: "#fff", border: "none", borderRadius: "6px", fontSize: "14px", fontWeight: "600", cursor: "pointer", marginBottom: "12px" },
+  statusBox: { background: "#ebf5ff", border: "1px solid #c3ddfd", borderRadius: "6px", padding: "14px", textAlign: "center", fontSize: "14px", color: "#1e429f", fontWeight: "600", marginBottom: "14px" },
+  sentNote: { background: "#f3faf7", border: "1px solid #bcf0da", borderRadius: "6px", padding: "10px 14px", fontSize: "13px", color: "#057a55", fontWeight: "600", marginBottom: "14px" },
+  errorBox: { background: "#fdf2f2", border: "1px solid #fde8e8", borderRadius: "6px", padding: "12px", fontSize: "13px", color: "#c81e1e", marginBottom: "14px" },
+  successBox: { background: "#f3faf7", border: "1px solid #bcf0da", borderRadius: "6px", padding: "14px", marginBottom: "16px" },
+  qrBox: { border: "1px solid #e5e7eb", borderRadius: "8px", padding: "20px", marginBottom: "16px" },
+  qrTitle: { fontSize: "13px", fontWeight: "700", color: "#111827", margin: "0 0 14px", textAlign: "center" },
+  codeBox: { background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "6px", padding: "14px", marginBottom: "16px" },
+  resetBtn: { width: "100%", padding: "11px", background: "#f9fafb", color: "#374151", border: "1px solid #e5e7eb", borderRadius: "6px", fontSize: "14px", fontWeight: "600", cursor: "pointer" },
 };

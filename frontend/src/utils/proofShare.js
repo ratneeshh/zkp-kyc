@@ -1,8 +1,8 @@
 import QRCode from "qrcode";
 
 // Encode proof into a shareable URL
-export const encodeProofToUrl = (proof, publicSignals, type = "age") => {
-  const payload = { proof, publicSignals, type, issuedAt: Date.now() };
+export const encodeProofToUrl = (proof, publicSignals, type = "age", extra = {}) => {
+  const payload = { proof, publicSignals, type, issuedAt: Date.now(), ...extra };
   const encoded = btoa(JSON.stringify(payload));
   return `${window.location.origin}/verifier?proof=${encoded}`;
 };

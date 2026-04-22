@@ -38,11 +38,16 @@ const { registerBankAdapter } = require("./adapters/bankAdapter");
 const sha256 = (str) =>
   crypto.createHash("sha256").update(str).digest("hex");
 
-const VALID_AADHAAR_HASHES = new Set([
-  sha256("220000000004"),
-  sha256("220000001102"),
-  sha256("220000001490"),
-]);
+const AADHAAR_REGISTRY = {
+  // 2200 0000 0004 — DOB: 1995-06-15 (adult, age 30) ✅
+  "ceb6ab48c529819f5629115fbaa540ed3a2df25bf3594131f271dc4a728c79ca": { dob: "1995-06-15" },
+  // 2200 0000 1102 — DOB: 2010-03-20 (minor, age 15) ❌
+  "dddb4a4a3b0be2bdc23a68d766f0e1cac88e4b68858a7b98dee4e5d72cf7c606": { dob: "2010-03-20" },
+  // 2200 0000 1490 — DOB: 1998-11-08 (adult, age 26) ✅
+  "ae2c84963cfebb479e37601403dc2063a5a23871c2909b2a035bdbb26965c775": { dob: "1998-11-08" },
+};
+const VALID_AADHAAR_HASHES = new Set(Object.keys(AADHAAR_REGISTRY));
+
 
 // OTP store — maps aadhaarHash -> { otp, expiresAt }
 const otpStore = new Map();
@@ -138,7 +143,8 @@ app.post("/api/uidai/verify-otp", (req, res) => {
   otpStore.delete(aadhaarHash);
   console.log("✅ OTP verified successfully");
 
-  return res.json({ success: true, message: "OTP verified" });
+  const registryEntry = AADHAAR_REGISTRY[aadhaarHash];
+  return res.json({ success: true, message: "OTP verified", dob: registryEntry?.dob });
 });
 
 // --------------------------------------------------

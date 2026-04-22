@@ -94,61 +94,41 @@ export default function AgeVerify() {
 
         {step === "done" && result && (
           <div>
-            {/* Success header */}
-            <div style={styles.successBox}>
+            <div style={{ background: "#f3faf7", border: "1px solid #bcf0da", borderRadius: "6px", padding: "14px", marginBottom: "16px" }}>
               <p style={{ fontSize: "14px", fontWeight: "700", color: "#057a55", margin: "0 0 4px" }}>
-                ✅ ZK Proof Generated — {result.timeTaken}s
+                ✅ KYC Proof Generated — {result.timeTaken}s
               </p>
               <p style={{ fontSize: "12px", color: "#374151", margin: 0 }}>
-                Your date of birth was <strong>never transmitted</strong>. Share this proof with any verifier.
+                Aadhaar and age proved. Zero PII transmitted. Share proof with verifier.
               </p>
             </div>
 
-            {/* QR Code */}
-            <div style={styles.qrBox}>
-              <p style={styles.qrTitle}>📱 Verifier scans this QR code</p>
-              <img src={result.qrDataUrl} alt="Proof QR" style={styles.qrImg} />
-              <p style={styles.qrSub}>
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "20px", textAlign: "center", marginBottom: "16px" }}>
+              <p style={{ fontSize: "13px", fontWeight: "700", color: "#111827", margin: "0 0 14px" }}>
+                📱 Verifier scans this QR code
+              </p>
+              <img src={result.qrDataUrl} alt="Proof QR" style={{ width: "200px", height: "200px", display: "block", margin: "0 auto" }} />
+              <p style={{ fontSize: "12px", color: "#6b7280", margin: "12px 0 0" }}>
                 Verifier learns only: <strong>PASS</strong> or <strong>FAIL</strong> — nothing else
               </p>
             </div>
 
-            {/* Proof code */}
-            <div style={styles.codeBox}>
-              <p style={styles.codeTitle}>Or share the proof code directly:</p>
+            <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "6px", padding: "14px", marginBottom: "16px" }}>
+              <p style={{ fontSize: "12px", fontWeight: "700", color: "#374151", margin: "0 0 8px" }}>Or share the proof code:</p>
               <textarea
-                readOnly
-                value={result.proofCode}
-                rows={3}
-                style={styles.textarea}
+                readOnly value={result.proofCode} rows={3}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "11px", fontFamily: "monospace", color: "#374151", background: "#fff", boxSizing: "border-box", resize: "none" }}
               />
-              <div style={styles.codeActions}>
-                <button onClick={handleCopy} style={styles.copyBtn}>
-                  {copied ? "✓ Copied!" : "Copy Code"}
-                </button>
-                
-                  <a
-                  href={result.proofUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={styles.verifierLink}
-                >
-                  Open Verifier Portal →
-                </a>
+              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                <button
+                  onClick={() => navigator.clipboard.writeText(result.proofCode)}
+                  style={{ padding: "7px 16px", background: "#1a56db", color: "#fff", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}
+                >Copy Code</button>
+                <a href={result.proofUrl} target="_blank" rel="noreferrer"
+                  style={{ padding: "7px 16px", background: "#057a55", color: "#fff", borderRadius: "4px", fontSize: "12px", fontWeight: "600", textDecoration: "none", display: "inline-block" }}
+                >Open Verifier Portal →</a>
               </div>
             </div>
-
-            {/* What verifier sees */}
-            <div style={styles.privacyNote}>
-              <p style={styles.privacyTitle}>🔒 What the verifier learns</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <PrivacyRow icon="✅" text="You are 18 or older" green />
-                <PrivacyRow icon="❌" text="Your actual date of birth" />
-                <PrivacyRow icon="❌" text="Your name or any other PII" />
-              </div>
-            </div>
-
-            <button onClick={reset} style={styles.resetBtn}>Generate Another Proof</button>
           </div>
         )}
       </div>
